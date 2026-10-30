@@ -1,0 +1,8 @@
+# SYNTHETIC EXAMPLE DATA - salaries/IDs invented for tests, not real DK data
+Position,Name + ID,Name,ID,Roster Position,Salary,Game Info,TeamAbbrev,AvgPointsPerGame
+QB,Patrick Mahomes (90000001),Patrick Mahomes,90000001,QB,7000,KC@LV 11/01/2026 04:25PM ET,KC,20.1
+RB,Saquon Barkley (90000002),Saquon Barkley,90000002,RB/FLEX,8000,PHI@DAL 11/01/2026 01:00PM ET,PHI,19.5
+WR,Puka Nacua (90000003),Puka Nacua,90000003,WR/FLEX,7800,LAR@SF 11/01/2026 04:05PM ET,LAR,18.0
+TE,Travis Kelce (90000004),Travis Kelce,90000004,TE/FLEX,5000,KC@LV 11/01/2026 04:25PM ET,KC,11.0
+DST,Eagles (90000005),Eagles ,90000005,DST,3200,PHI@DAL 11/01/2026 01:00PM ET,PHI,8.0
+WR,Notareal Player (90000006),Notareal Player,90000006,WR/FLEX,3000,PHI@DAL 11/01/2026 01:00PM ET,DAL,1.0

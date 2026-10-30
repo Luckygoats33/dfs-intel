@@ -1,0 +1,5 @@
+# SYNTHETIC EXAMPLE DATA - salaries/IDs invented for tests, not real DK data
+Position,Name + ID,Name,ID,Roster Position,Salary,Game Info,TeamAbbrev,AvgPointsPerGame
+F,Alexander Volkanovski (91000001),Alexander Volkanovski,91000001,F,9200,Volkanovski@Evloev 10/24/2026 10:00PM ET,,90.0
+F,Movsar Evloev (91000002),Movsar Evloev,91000002,F,7000,Volkanovski@Evloev 10/24/2026 10:00PM ET,,80.0
+F,Fakey McFighter (91000003),Fakey McFighter,91000003,F,6000,McFighter@Nobody 10/24/2026 06:00PM ET,,0.0
