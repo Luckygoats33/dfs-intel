@@ -303,7 +303,8 @@ def build_ufc(client: PageFetcher, history: dict) -> tuple[list[dict], str | Non
                     except Exception as exc:
                         parsed_articles[url] = {"url": url, "status": "unavailable", "error": str(exc)}
                 articles.append(parsed_articles[url])
-            built.append(assemble_event(listing, page, articles, history, observed))
+            event = assemble_event(listing, page, articles, history, observed)
+            built.append(event)
         except Exception as exc:
             built.append({
                 "status": "unavailable",
@@ -320,38 +321,15 @@ def build_ufc(client: PageFetcher, history: dict) -> tuple[list[dict], str | Non
 
 def build_nfl(refresh: bool) -> dict:
     from dfs_intel.nfl_board import load_nfl
+    from dfs_intel.slip_data import nfl_slate
     board = load_nfl(refresh=refresh)
     if board.get("status") != "ok":
         return board
+    stats = board.pop("stats_frame", None)
     for week in board["weeks"]:
-        groups = []
-        for game in week["games"]:
-            priced = game.get("priced") or {}
-            if not priced.get("valid"):
-                continue
-            groups.append({
-                "id": game["game_id"],
-                "label": f"{game['away']} at {game['home']}",
-                "legs": [
-                    {
-                        "id": game["game_id"] + "-away",
-                        "label": game["away"],
-                        "american": game["away_moneyline"],
-                        "american_fmt": game.get("away_moneyline_american"),
-                        "decimal": priced["decimal_away"],
-                        "novig": priced["novig_away"],
-                    },
-                    {
-                        "id": game["game_id"] + "-home",
-                        "label": game["home"],
-                        "american": game["home_moneyline"],
-                        "american_fmt": game.get("home_moneyline_american"),
-                        "decimal": priced["decimal_home"],
-                        "novig": priced["novig_home"],
-                    },
-                ],
-            })
-        week["parlay_slates"] = [_with_presets(week["slug"], f"NFL {week['season']} week {week['week']}", groups)]
+        slate = nfl_slate(week, stats)
+        week["slate"] = slate
+        week["parlay_slates"] = [slate]
     board["week_links"] = [{"slug": w["slug"], "week": w["week"]} for w in board["weeks"]]
     return board
 
@@ -380,14 +358,10 @@ def write_site(out: Path, events: list[dict], board: dict, history: dict, built_
     shutil.copy(STATIC / "parlay.js", out / "assets" / "parlay.js")
     slates = []
     for event in events:
-        for slate in event.get("parlay_slates") or []:
-            if slate.get("groups"):
-                slates.append(slate)
-    if board.get("status") == "ok":
-        for week in board["weeks"]:
-            for slate in week.get("parlay_slates") or []:
-                if slate.get("groups"):
-                    slates.append(slate)
+        slate = event.get("slate")
+        if slate and slate.get("groups"):
+            slates.append(slate)
+            break
     default = slates[0]["id"] if slates else ""
     board = dict(board)
     board["history_blurb"] = _history_blurb(history)
@@ -422,8 +396,19 @@ def build(out: Path, delay: float = 2.5, refresh_nfl: bool = True, refresh_histo
         history = load_mirror(refresh=refresh_history)
     except Exception as exc:
         history = {"status": "unavailable", "error": str(exc), "timing": None}
+    from dfs_intel.gapodds import fetch_props
+    from dfs_intel.method_split import build_split_table
+    from dfs_intel.slip_data import ufc_slate
+    gap = fetch_props(delay=2.0)
     with PageFetcher(delay=delay) as client:
         events, ufc_error = build_ufc(client, history)
+    fights = history.get("fights") if history and history.get("status") == "ok" else None
+    table = build_split_table(fights) if fights is not None else None
+    for event in events:
+        if event.get("status") == "ok" and event.get("slug"):
+            slate = ufc_slate(event, table, fights, gap)
+            event["slate"] = slate
+            event["parlay_slates"] = [slate]
     if ufc_error and not events:
         events = [{"status": "unavailable", "slug": None, "headline": "UFC events", "error": ufc_error, "fights": [], "parlay_slates": []}]
     try:
