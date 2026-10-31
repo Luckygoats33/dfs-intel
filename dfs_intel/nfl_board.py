@@ -86,6 +86,7 @@ def load_nfl(refresh: bool = True, today: datetime | None = None) -> dict:
         "model": MODEL,
         "trail_games": TRAIL_N,
         "weeks": weeks,
+        "stats_frame": points,
     }
 
 

@@ -41,11 +41,26 @@ If the deploy job fails because Pages is not enabled, open the repo on GitHub an
   `trailing-average-v0`: the mean of up to the last 8 regular-season games before that week,
   scored with the rules in `dfs_intel/dk_scoring_config.py`. DST and kickers are unavailable
   because this refresh does not download play-by-play.
-- **Parlay builder** (every page) — pick legs, stake defaults to $1, combined American and
-  decimal odds, implied chance under independence (correlation is called out), payout and profit.
-  A filter keeps presets that pay $50 or more on a $1 stake (decimal odds ≥ 50). Preset 3-, 5-,
-  and 7-leg favorite and longshot parlays are built from the valid moneylines. Quotes with an
-  overround above 15% stay visible and are left out of the builder.
+- **Parlay builder** — the centerpiece, on the home page (next UFC card), each event, and each
+  NFL week. Desktop keeps the slip pinned; mobile uses a bottom sheet. Stake chips are $1, $5,
+  and $10. Tabs are Moneyline, Method, Round, Timing, and NFL Player Props. Search, a “pays $50+
+  on $1” switch, and a “legs at +5000” filter narrow the board. Presets include the 3/5/7-leg
+  moneyline tickets and a ticket built to +5000 or longer. Copy slip link writes the legs and
+  stake into the URL hash. Random pick draws a fresh ticket at +5000 or longer from the
+  filtered legs, weighted toward higher model probability and a positive edge. Shuffle again,
+  lock a leg, and add the card to the slip. The last five picks stay under the button.
+- **UFC props** — method (KO/TKO, submission, decision), method and round, goes the distance,
+  fight ends in round N, and the three timing windows. `method-split-v0` multiplies the no-vig
+  win probability by that fighter’s method/round mix, shrunk with K=4 toward the weight-class
+  base rate. Fewer than 8 wins, or a class under 30 fights, is flagged thin. Timing legs use the
+  observed `ufc_timing` rate. Same-fight legs use that joint. A clock-time leg narrowed to one
+  fighter or method is withheld instead of multiplied. Contradictory legs are refused. Consensus
+  method prices from the public GAPOdds page are shown beside our number when that page has the fight.
+- **NFL props** — passing yards, rushing yards, receiving yards, receptions, and anytime TD
+  (rushing, receiving, or return; not a passing touchdown). `trail-quantile-v0` is the share of
+  the player’s recent regular-season games over or under a line. The line starts at the trailing
+  mean on a half-point and can be edited. No prop-line feed is used, so the market price stays
+  empty. Same-game props are multiplied and labeled as correlated, not as a joint model.
 
 ## Setup
 
@@ -101,7 +116,8 @@ pytest -q
 
 DraftKings, NFL.com, Pro-Football-Reference, Sports Reference, paid APIs, and undocumented
 endpoints. UFCStats.com blocks automated clients; this project does not try to get around that.
-UFC history is tagged `ufcstats_via_github:Greco1899/scrape_ufc_stats`.
+UFC history is tagged `ufcstats_via_github:Greco1899/scrape_ufc_stats`. GAPOdds is read only at
+`/ufc/player-props`, which that site’s robots.txt allows.
 
 ## Leakage semantics
 

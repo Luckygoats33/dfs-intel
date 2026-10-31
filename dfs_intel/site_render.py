@@ -68,7 +68,7 @@ def fig(display, kind: str, source: str, asof, title: str | None = None) -> str:
 
 
 def legend() -> str:
-    return '<div class="legend">' + "".join(chip(k) + " " + esc(name) for k, name in LEGEND) + "</div>"
+    return '<div class="legend" aria-label="How numbers are labeled">' + "".join(chip(k) for k, _name in LEGEND) + "</div>"
 
 
 def shell(title: str, depth: int, body: str, built_at, parlay: dict | None) -> str:
@@ -87,13 +87,14 @@ def shell(title: str, depth: int, body: str, built_at, parlay: dict | None) -> s
 <title>{esc(title)} · dfs-intel</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,640&family=IBM+Plex+Mono:wght@400;560&family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@560;700&family=Barlow:wght@400;560;700&family=IBM+Plex+Mono:wght@400;560&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{root}assets/site.css">
 </head>
 <body>
+<a class="skip" href="#builder-title">Skip to parlay builder</a>
 <header class="mast">
-  <a class="brand" href="{root}index.html">dfs-intel<small>UFC and NFL research desk</small></a>
-  <div class="asof">Built {esc(fmt_pt(built_at))}<br>Times on this page are America/Los_Angeles.</div>
+  <a class="brand" href="{root}index.html">dfs-intel<small>Research desk · not a sportsbook</small></a>
+  <div class="asof">Built {esc(fmt_pt(built_at))}<br>Times shown in America/Los_Angeles.</div>
 </header>
 <p class="disclaimer"><strong>Disclaimer.</strong> {esc(DISCLAIMER)}</p>
 <main class="wrap">
@@ -110,58 +111,105 @@ def shell(title: str, depth: int, body: str, built_at, parlay: dict | None) -> s
 """
 
 
-def _parlay_block(slates: list[dict], default: str) -> str:
-    picker = ""
-    if len(slates) > 1:
-        options = []
-        for slate in slates:
-            sel = " selected" if slate["id"] == default else ""
-            options.append(f'<option value="{esc(slate["id"])}"{sel}>{esc(slate["title"])}</option>')
-        picker = f'<label>Card <select data-slate-picker>{"".join(options)}</select></label>'
-    panels = []
-    preset_buttons = []
-    for slate in slates:
-        groups = []
-        for group in slate["groups"]:
-            legs = []
-            for leg in group["legs"]:
-                legs.append(
-                    "<label>"
-                    f'<input type="checkbox" data-leg="{esc(leg["id"])}" data-group="{esc(group["id"])}" '
-                    f'data-decimal="{esc(leg["decimal"])}" data-novig="{esc(leg["novig"])}"> '
-                    f'{esc(leg["label"])} <span class="muted">{esc(leg.get("american_fmt") or "")}</span>'
-                    "</label>"
-                )
-            groups.append(
-                f'<div class="fight-picks"><p>{esc(group["label"])}</p>{"".join(legs)}</div>'
-            )
-        hidden = "" if slate["id"] == default else " hidden"
-        panels.append(f'<div data-slate-panel="{esc(slate["id"])}"{hidden}>{"".join(groups) or "<p>No priced legs.</p>"}</div>')
-        for preset in slate.get("presets") or []:
-            pays = "1" if preset.get("pays_50_on_1") else "0"
-            preset_buttons.append(
-                f'<button type="button" data-preset data-slate="{esc(slate["id"])}" data-pays50="{pays}" '
-                f'data-leg-ids="{esc(",".join(preset["leg_ids"]))}">'
-                f'<strong>{esc(preset["name"])}</strong>'
-                f'<span>{esc(preset.get("american_fmt"))} · {esc(pct(preset.get("implied")))} · '
-                f'${preset.get("payout_on_1"):.2f} back on $1</span>'
-                f'<span>{esc(", ".join(preset.get("labels") or []))}</span>'
-                "</button>"
-            )
-    return f"""
-<section class="parlay" data-parlay data-slate="{esc(default)}">
-  <h2>Parlay builder</h2>
-  <p class="fine">Stake defaults to $1. Combined American and decimal odds multiply the listed moneylines. Implied chance multiplies no-vig probabilities and assumes independence; real cards are correlated. “Pays $50+ on $1” means total payout, stake included, is at least $50 (decimal odds at least 50), measured on a $1 stake no matter what stake you type.</p>
-  <div class="controls">
-    {picker}
-    <label>Stake $ <input data-stake type="number" min="0" step="1" value="1"></label>
-    <label><input data-filter50 type="checkbox"> Show presets that pay $50+ on $1</label>
+def builder_mount() -> str:
+    return """
+<section class="builder" aria-label="Parlay builder">
+  <div class="board">
+    <div class="board-head">
+      <h2 id="builder-title">Parlay builder</h2>
+      <p class="fine" data-market-note></p>
+    </div>
+    <div class="mode" role="tablist" aria-label="Builder mode">
+      <button type="button" role="tab" id="mode-results" aria-selected="true">Results</button>
+      <button type="button" role="tab" id="mode-manual" aria-selected="false">Build your own</button>
+    </div>
+    <div data-results-panel>
+      <div class="filters" aria-label="Parlay filters">
+        <div class="filter-row">
+          <label>Min payout on $1 <input data-min-pay type="number" min="1" step="1" value="50"></label>
+          <label>Max payout on $1 <input data-max-pay type="number" min="1" step="1" placeholder="No max"></label>
+          <label>Legs <input data-min-legs type="number" min="2" max="8" value="2">–<input data-max-legs type="number" min="2" max="8" value="5"></label>
+          <label>Min leg chance <input data-min-p type="range" min="0" max="40" value="2"><output data-min-p-out>2%</output></label>
+          <label>Min edge <input data-min-edge type="range" min="0" max="20" value="0"><output data-min-edge-out>0</output></label>
+        </div>
+        <div class="chips" role="group" aria-label="Style">
+          <button type="button" data-style="any" aria-pressed="true">Any price</button>
+          <button type="button" data-style="fav" aria-pressed="false">Favorites</button>
+          <button type="button" data-style="dog" aria-pressed="false">Underdogs</button>
+          <button type="button" data-style="mixed" aria-pressed="false">Mixed</button>
+        </div>
+        <div class="chips" data-type-chips role="group" aria-label="Leg types"></div>
+        <div class="chips" data-event-chips role="group" aria-label="Fights and games"></div>
+        <div class="filter-row">
+          <label>Include <input data-include type="search" placeholder="Names, comma separated"></label>
+          <label>Exclude <input data-exclude type="search" placeholder="Leave these out"></label>
+          <button type="button" class="switch" role="switch" aria-checked="false" data-market-only><span class="switch-ui" aria-hidden="true"></span>Market price only</button>
+          <button type="button" class="switch" role="switch" aria-checked="false" data-same><span class="switch-ui" aria-hidden="true"></span>Allow same fight or game</button>
+          <label>Sort
+            <select data-sort>
+              <option value="chance">Highest chance</option>
+              <option value="payout">Highest payout</option>
+              <option value="edge">Best edge</option>
+              <option value="legs">Fewest legs</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="random-box">
+        <button type="button" class="random-go" data-random>Random pick</button>
+        <p class="fine">A fresh ticket at +5000 or longer, from the legs these filters allow. Sampling leans toward higher model probability and a positive edge.</p>
+        <div data-random-card></div>
+        <div class="history-row" data-random-history aria-label="Last five random picks"></div>
+      </div>
+      <p class="fine" data-result-count></p>
+      <div class="result-list" data-results></div>
+    </div>
+    <div data-manual-panel hidden>
+      <div class="tabs" role="tablist" aria-label="Prop type" data-tabs></div>
+      <div class="board-tools">
+        <label class="search">Search
+          <input type="search" data-search placeholder="Fighter, player, or bet" autocomplete="off">
+        </label>
+      </div>
+      <div class="leg-list" data-board></div>
+    </div>
+    <p class="empty" data-empty hidden>No parlays match these filters.</p>
   </div>
-  <div class="presets">{"".join(preset_buttons) or "<p class='fine'>Not enough valid prices for a 3-leg preset.</p>"}</div>
-  {"".join(panels)}
-  <div class="result" data-result></div>
+  <aside class="slip" id="slip" aria-label="Bet slip">
+    <button type="button" class="slip-peek" data-peek aria-expanded="false" aria-controls="slip-body">
+      <span data-peek-count>Slip · 0 legs</span>
+      <span data-peek-pay>Add a leg</span>
+    </button>
+    <div id="slip-body" class="slip-body">
+      <header class="slip-head">
+        <h2>Slip</h2>
+        <button type="button" class="textish" data-clear>Clear</button>
+      </header>
+      <div class="slip-stake">
+        <label>Stake
+          <span class="stake-wrap"><span aria-hidden="true">$</span><input data-stake type="number" min="0" step="1" value="1" inputmode="decimal"></span>
+        </label>
+        <div class="chips" role="group" aria-label="Quick stake">
+          <button type="button" data-chip="1" aria-pressed="true">$1</button>
+          <button type="button" data-chip="5" aria-pressed="false">$5</button>
+          <button type="button" data-chip="10" aria-pressed="false">$10</button>
+        </div>
+      </div>
+      <ul class="slip-legs" data-slip-legs></ul>
+      <p class="warn" data-slip-warn hidden></p>
+      <dl class="slip-nums" data-slip-nums></dl>
+      <p class="fine" data-slip-note></p>
+      <button type="button" class="share" data-share>Copy slip link</button>
+      <p class="copied" data-copied hidden>Link copied.</p>
+      <p class="sr-only" aria-live="polite" data-live></p>
+    </div>
+  </aside>
 </section>
 """
+
+
+def parlay_payload(slates: list[dict], default: str) -> dict:
+    return {"slates": slates, "default": default}
 
 
 def render_timing(timing: dict | None, history: dict) -> str:
@@ -358,7 +406,8 @@ def render_ufc(event: dict, history: dict, built_at, siblings: list[dict]) -> st
 <h1>{esc(event.get('name') or event.get('headline'))}</h1>
 <p class="lede">{fig(event.get('venue') or event.get('location'), 'observed', src, odds_asof)}</p>
 {legend()}
-<p class="fine">This page does not add handwritten fight leans. {chip('inference')} is unused here on purpose. Invalid moneylines (overround above 15%) stay visible and are left out of the parlay builder.</p>
+{builder_mount()}
+<p class="fine">This page does not add handwritten fight leans. {chip('inference')} is unused here on purpose. Invalid moneylines (overround above 15%) stay visible and are left out of the parlay builder. Same-fight props use the joint from method-split-v0. A clock-time leg cut by a narrower method is left unidentified instead of multiplied.</p>
 <ul>{''.join(times)}</ul>
 <p class="fine">Broadcaster text on the page: {esc(event.get('broadcaster') or 'not stated')}.</p>
 <h2>News, weigh-ins, late changes</h2>
@@ -375,11 +424,11 @@ def render_ufc(event: dict, history: dict, built_at, siblings: list[dict]) -> st
 <tbody>{''.join(detail_rows)}</tbody>
 </table></div>
 {render_timing((history or {}).get('timing'), history)}
-<h2>Priced parlays from this card</h2>
-{_parlay_block(event['parlay_slates'], event['slug'])}
 <p class="navrow"><a href="../index.html">All events</a><span>{links}</span></p>
 """
-    return shell(event.get("name") or "UFC", 1, body, built_at, {"default": event["slug"]})
+    slate = event.get("slate")
+    payload = parlay_payload([slate] if slate else [], event.get("slug") or "")
+    return shell(event.get("name") or "UFC", 1, body, built_at, payload)
 
 
 def _score_fig(game: dict, source: str, asof) -> str:
@@ -437,7 +486,8 @@ def render_nfl(week: dict, built_at, board: dict) -> str:
 <h1>Week {esc(week['week'])}</h1>
 <p class="lede">First kickoff {fig(fmt_pt(week.get('first_kickoff_pt')) if week.get('first_kickoff_pt') else None, 'observed', src_sched, sched_asof)}. Last kickoff {fig(fmt_pt(week.get('last_kickoff_pt')) if week.get('last_kickoff_pt') else None, 'observed', src_sched, sched_asof)}.</p>
 {legend()}
-<p class="fine">This page does not add handwritten leans. {chip('inference')} is unused. Moneylines are whatever nflverse publishes in the schedule file; the book is not named there. Trailing averages are {esc(week.get('model'))}, last {esc(week.get('trail_games'))} regular-season games before this week, labeled baseline. {esc(week.get('roster_note') or '')} Players on the active roster with no prior line in the stat window: {fig(week.get('missing_history'), 'observed', board.get('source_rosters') or 'nflverse:rosters_weekly', week.get('roster_observed_at'))}. {esc(week.get('dst_note') or '')}</p>
+{builder_mount()}
+<p class="fine">This page does not add handwritten leans. {chip('inference')} is unused. Moneylines are whatever nflverse publishes in the schedule file; the book is not named there. Player props are {esc('trail-quantile-v0')}: the share of that player's previous regular-season games over or under a line you set. The line starts at the trailing mean, rounded to a half-point. There is no licensed prop feed, so a blank market price means the line is yours. Same-game props are correlated; the slip says so and still multiplies them. Trailing DK averages are {esc(week.get('model'))}, last {esc(week.get('trail_games'))} regular-season games before this week. {esc(week.get('roster_note') or '')} Players on the active roster with no prior line in the stat window: {fig(week.get('missing_history'), 'observed', board.get('source_rosters') or 'nflverse:rosters_weekly', week.get('roster_observed_at'))}. {esc(week.get('dst_note') or '')}</p>
 <h2>Games</h2>
 <div class="scroll"><table>
 <thead><tr><th>Kickoff</th><th>Game</th><th>Score</th><th>Away ML</th><th>Home ML</th><th>No-vig away/home</th><th>Home spread</th><th>Total</th></tr></thead>
@@ -446,11 +496,10 @@ def render_nfl(week: dict, built_at, board: dict) -> str:
 <h2>Top trailing-average projections by position</h2>
 <p class="fine">Baseline only. Salaries are not loaded, so this is not a lineup. Listed QB on the schedule, when nflverse has one: see the game feed in the source file; it is not repeated as a projection.</p>
 {''.join(pos_blocks)}
-<h2>Priced parlays from this week</h2>
-{_parlay_block(week['parlay_slates'], week['slug'])}
 <p class="navrow"><a href="../index.html">All weeks</a><span>{nav}</span></p>
 """
-    return shell(f"NFL {week['season']} week {week['week']}", 1, body, built_at, {"default": week["slug"]})
+    slate = week.get("slate")
+    return shell(f"NFL {week['season']} week {week['week']}", 1, body, built_at, parlay_payload([slate] if slate else [], week["slug"]))
 
 
 def render_home(events: list[dict], board: dict, built_at, parlay_slates: list[dict], default_slate: str) -> str:
@@ -501,16 +550,14 @@ def render_home(events: list[dict], board: dict, built_at, parlay_slates: list[d
     if hist:
         elo = f"<p class='fine'>{esc(hist)}</p>"
     body = f"""
-<h1>Upcoming cards</h1>
-<p class="lede">Every upcoming UFC event on UFC.com, and every regular-season week in the current nflverse schedule. Built for personal DFS and betting research. It never places a bet.</p>
+<h1>Build a slip</h1>
+<p class="lede">The next UFC card is loaded in the builder. Other cards and every NFL week are one tap away. Research only. It never places a bet.</p>
 {legend()}
 {elo}
+{builder_mount()}
 <div class="grid">
 <section><h2>UFC</h2><div class="stack">{''.join(ufc_cards) or '<p>No upcoming events.</p>'}</div></section>
 <section><h2>NFL</h2><div class="stack">{''.join(weeks) or '<p>No weeks.</p>'}</div></section>
 </div>
-<h2>Parlay builder</h2>
-<p class="fine">Pick a card. Presets are the 3-, 5-, and 7-leg favorite and longshot parlays from that card’s valid moneylines.</p>
-{_parlay_block(parlay_slates, default_slate)}
 """
-    return shell("Research desk", 0, body, built_at, {"default": default_slate})
+    return shell("Research desk", 0, body, built_at, parlay_payload(parlay_slates, default_slate))

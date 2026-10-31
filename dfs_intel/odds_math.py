@@ -80,6 +80,52 @@ def combine_parlay(legs: list[dict], stake: float = 1.0) -> dict:
     }
 
 
+def presets_plus_5000(groups: list[dict]) -> dict | None:
+    """One leg per group, longest model prices first, until the ticket is +5000 or longer.
+
+    Legs marked thin are left out of the automatic ticket. One leg per group keeps
+    the price a product of separate events.
+    """
+    picks = []
+    for group in groups:
+        cands = []
+        for leg in group.get("legs") or []:
+            prob = leg.get("model_p", leg.get("novig"))
+            if leg.get("thin") or prob is None or not leg.get("decimal"):
+                continue
+            if prob <= 0 or prob >= 1:
+                continue
+            cands.append(leg)
+        if not cands:
+            continue
+        picks.append(min(cands, key=lambda leg: leg.get("model_p", leg.get("novig"))))
+    picks.sort(key=lambda leg: leg.get("model_p", leg.get("novig")))
+    chosen = []
+    priced = None
+    for leg in picks:
+        chosen.append(leg)
+        priced = combine_parlay(chosen, 1.0)
+        if (priced.get("american") or 0) >= 5000 or len(chosen) >= 8:
+            break
+    if not priced or (priced.get("american") or 0) < 5000:
+        return None
+    return {
+        "id": "longshot-plus5000",
+        "kind": "longshot",
+        "n": len(chosen),
+        "name": f"{len(chosen)}-leg +5000",
+        "leg_ids": [leg["id"] for leg in chosen],
+        "labels": [leg["label"] for leg in chosen],
+        "decimal": priced["decimal"],
+        "american": priced["american"],
+        "american_fmt": format_american(priced["american"]),
+        "implied": priced["implied"],
+        "payout_on_1": priced["payout"],
+        "profit_on_1": priced["profit"],
+        "pays_50_on_1": True,
+    }
+
+
 def preset_parlays(groups: list[dict]) -> list[dict]:
     """3/5/7-leg favorite and longshot parlays from valid two-sided prices.
 
