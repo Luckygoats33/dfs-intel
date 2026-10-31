@@ -1,0 +1,9 @@
+duckdb
+pandas
+pyarrow
+nflreadpy
+polars
+requests
+beautifulsoup4
+pytest
+playwright
