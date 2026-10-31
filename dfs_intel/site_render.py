@@ -71,7 +71,7 @@ def legend() -> str:
     return '<div class="legend" aria-label="How numbers are labeled">' + "".join(chip(k) for k, _name in LEGEND) + "</div>"
 
 
-def shell(title: str, depth: int, body: str, built_at, parlay: dict | None) -> str:
+def shell(title: str, depth: int, body: str, built_at, parlay: dict | None, extra_scripts: list[str] | None = None) -> str:
     root = "../" * depth
     data = ""
     script = ""
@@ -93,7 +93,15 @@ def shell(title: str, depth: int, body: str, built_at, parlay: dict | None) -> s
 <body>
 <a class="skip" href="#builder-title">Skip to parlay builder</a>
 <header class="mast">
-  <a class="brand" href="{root}index.html">dfs-intel<small>Research desk · not a sportsbook</small></a>
+  <div>
+    <a class="brand" href="{root}index.html">dfs-intel<small>Parlays · research only</small></a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="{root}index.html">Tiers</a>
+      <a href="{root}stats.html">Stats</a>
+      <a href="{root}slips.html">My slips</a>
+      <a href="{root}index.html#cards">Cards</a>
+    </nav>
+  </div>
   <div class="asof">Built {esc(fmt_pt(built_at))}<br>Times shown in America/Los_Angeles.</div>
 </header>
 <p class="disclaimer"><strong>Disclaimer.</strong> {esc(DISCLAIMER)}</p>
@@ -106,6 +114,7 @@ def shell(title: str, depth: int, body: str, built_at, parlay: dict | None) -> s
 </footer>
 {data}
 {script}
+{"".join(f'<script src="{root}{src}"></script>' for src in (extra_scripts or []))}
 </body>
 </html>
 """
@@ -126,9 +135,20 @@ def builder_mount() -> str:
     <div data-results-panel>
       <div class="filters" aria-label="Parlay filters">
         <div class="filter-row">
+          <label>Tier
+            <select data-pay-tier aria-label="Payout tier">
+              <option value="">Custom payout</option>
+              <option value="51,101">+5000 (50 to 1)</option>
+              <option value="101,251">+10000</option>
+              <option value="251,501">+25000</option>
+              <option value="501,1001">+50000</option>
+              <option value="1001,5001">+100000</option>
+              <option value="5001,">+500000</option>
+            </select>
+          </label>
           <label>Min payout on $1 <input data-min-pay type="number" min="1" step="1" value="50"></label>
           <label>Max payout on $1 <input data-max-pay type="number" min="1" step="1" placeholder="No max"></label>
-          <label>Legs <input data-min-legs type="number" min="2" max="8" value="2">–<input data-max-legs type="number" min="2" max="8" value="5"></label>
+          <label>Legs <input data-min-legs type="number" min="2" max="10" value="2">–<input data-max-legs type="number" min="2" max="10" value="5"></label>
           <label>Min leg chance <input data-min-p type="range" min="0" max="40" value="2"><output data-min-p-out>2%</output></label>
           <label>Min edge <input data-min-edge type="range" min="0" max="20" value="0"><output data-min-edge-out>0</output></label>
         </div>
@@ -152,6 +172,13 @@ def builder_mount() -> str:
               <option value="edge">Best edge</option>
               <option value="legs">Fewest legs</option>
             </select>
+          </label>
+        </div>
+        <div class="filter-row">
+          <label>Preset name <input data-preset-name type="text" placeholder="Saturday dogs"></label>
+          <button type="button" data-preset-save>Save filter preset</button>
+          <label>Saved presets
+            <select data-preset-load><option value="">Choose a preset</option></select>
           </label>
         </div>
       </div>
@@ -200,6 +227,7 @@ def builder_mount() -> str:
       <dl class="slip-nums" data-slip-nums></dl>
       <p class="fine" data-slip-note></p>
       <button type="button" class="share" data-share>Copy slip link</button>
+      <button type="button" class="share save" data-save>Save to My slips</button>
       <p class="copied" data-copied hidden>Link copied.</p>
       <p class="sr-only" aria-live="polite" data-live></p>
     </div>
@@ -550,14 +578,310 @@ def render_home(events: list[dict], board: dict, built_at, parlay_slates: list[d
     if hist:
         elo = f"<p class='fine'>{esc(hist)}</p>"
     body = f"""
-<h1>Build a slip</h1>
-<p class="lede">The next UFC card is loaded in the builder. Other cards and every NFL week are one tap away. Research only. It never places a bet.</p>
+<h1>Parlay tiers</h1>
+<p class="lede">Six payout bands. Each one lists ranked tickets for every upcoming UFC card and NFL week, with its own random pick. Research only. It never places a bet.</p>
+<div class="tier-grid">
+  <a class="tier-card" href="tiers/5000.html"><strong>+5000</strong>50 to 1</a>
+  <a class="tier-card" href="tiers/10000.html"><strong>+10000</strong>100 to 1</a>
+  <a class="tier-card" href="tiers/25000.html"><strong>+25000</strong>250 to 1</a>
+  <a class="tier-card" href="tiers/50000.html"><strong>+50000</strong>500 to 1</a>
+  <a class="tier-card" href="tiers/100000.html"><strong>+100000</strong>1000 to 1</a>
+  <a class="tier-card" href="tiers/500000.html"><strong>+500000</strong>5000 to 1</a>
+</div>
+<p class="fine"><a href="stats.html">Backtest stats</a> · <a href="slips.html">My slips</a></p>
+<h2>Next card</h2>
 {legend()}
 {elo}
 {builder_mount()}
-<div class="grid">
+<div class="grid" id="cards">
 <section><h2>UFC</h2><div class="stack">{''.join(ufc_cards) or '<p>No upcoming events.</p>'}</div></section>
 <section><h2>NFL</h2><div class="stack">{''.join(weeks) or '<p>No weeks.</p>'}</div></section>
 </div>
 """
-    return shell("Research desk", 0, body, built_at, parlay_payload(parlay_slates, default_slate))
+    return shell("Parlay tiers", 0, body, built_at, parlay_payload(parlay_slates, default_slate))
+
+
+def _pct_or_thin(rate, n, thin_at: int) -> str:
+    if n is None or n < thin_at or rate is None:
+        return f"too thin (n={0 if n is None else n})"
+    return f"{rate * 100:.1f}% (n={n})"
+
+
+def _backtest_cell(row: dict, key: str, text: str, thin_at: int = 30) -> str:
+    n = row.get("n") or 0
+    if n < thin_at:
+        return f"too thin (n={n})"
+    if row.get(key) is None:
+        return "no hits" if key == "avg_payout_on_hit" else "—"
+    return text
+
+
+def _tier_nav(current: str | None, depth: int) -> str:
+    root = "../" * depth
+    links = []
+    for tier_id, label in (
+        ("5000", "+5000"), ("10000", "+10000"), ("25000", "+25000"),
+        ("50000", "+50000"), ("100000", "+100000"), ("500000", "+500000"),
+    ):
+        current_attr = " aria-current=\"page\"" if tier_id == current else ""
+        links.append(f'<a href="{root}tiers/{tier_id}.html"{current_attr}>{label}</a>')
+    return f'<nav class="tier-nav" aria-label="Payout tiers">{"".join(links)}</nav>'
+
+
+def _ticket_article(section_id: str, ticket: dict) -> str:
+    legs = ticket.get("legs") or []
+    items = "".join(
+        f"<li><b>{esc(leg['label'])}</b> · {esc(leg.get('price') or '—')}"
+        f"<span class='why'>{esc(leg.get('why') or '')}</span></li>"
+        for leg in legs
+    )
+    if ticket.get("same"):
+        badge = "Same-fight joint"
+    elif ticket.get("nfl_same"):
+        badge = "Same-game, correlated"
+    else:
+        badge = "One leg per event"
+    decimals = [float(leg["decimal"]) for leg in legs if leg.get("decimal")]
+    if decimals and all(value < 2 for value in decimals):
+        style = "fav"
+    elif decimals and all(value >= 2 for value in decimals):
+        style = "dog"
+    else:
+        style = "mixed"
+    types = " ".join(sorted({leg.get("type") or "" for leg in legs}))
+    names = " ".join(leg.get("label") or "" for leg in legs)
+    edge = ticket.get("edge")
+    edge_attr = "" if edge is None else f"{edge:.4f}"
+    min_p = ticket.get("min_p")
+    min_attr = "" if min_p is None else f"{min_p:.4f}"
+    market = "1" if legs and all(leg.get("market") for leg in legs) else "0"
+    return (
+        f"<article class='pcard' data-open-ticket='{esc(section_id)}|{esc(ticket['key'])}'"
+        f" data-n='{ticket['n']}' data-p='{ticket.get('p') or 0}' data-decimal='{ticket.get('decimal') or 0}'"
+        f" data-edge='{esc(edge_attr)}' data-minp='{esc(min_attr)}' data-style='{style}'"
+        f" data-same='{'1' if ticket.get('same') or ticket.get('nfl_same') else '0'}'"
+        f" data-market='{market}' data-types='{esc(types)}' data-names='{esc(names)}'>"
+        f"<div class='pcard-top'><strong>{esc(ticket.get('american'))}</strong>"
+        f"<span>{ticket['decimal']:.2f} back on $1</span></div>"
+        f"<div class='badges'>{chip('model')} {esc(pct(ticket.get('p')))} · {chip('observed')} {esc(badge)}</div>"
+        f"<ul>{items}</ul>"
+        f"<button type='button' class='add' data-open>Open in slip</button></article>"
+    )
+
+
+def render_tier_page(tier: dict, sections: list[dict], built_at) -> str:
+    blocks = []
+    for section in sections:
+        cards = [_ticket_article(section["id"], ticket) for ticket in section.get("parlays") or []]
+        note = "No ticket in this band matches. The listed prices may not multiply this far, or the filters removed them."
+        empty = f"<p class='fine' data-section-empty{' hidden' if cards else ''}>{note}</p>"
+        blocks.append(
+            f"<section class='tier-block' data-sport='{esc(section['sport'])}' data-event='{esc(section['id'])}' data-title='{esc(section['title'])}'>"
+            f"<h2><a href='{esc(section['href'])}'>{esc(section['title'])}</a></h2>"
+            f"<div class='result-list'>{''.join(cards)}</div>{empty}</section>"
+        )
+    payload = {
+        "tier": tier["id"],
+        "label": tier["label"],
+        "minDecimal": tier["min_decimal"],
+        "maxDecimal": tier["max_decimal"],
+        "sections": sections,
+    }
+    raw = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
+    body = f"""
+<p class="kicker">Payout tier</p>
+<h1 id="builder-title">{esc(tier['label'])}</h1>
+<p class="lede">Ranked tickets in this band for every upcoming UFC card and NFL week still on the desk. Prices follow the same rules as the card builder. Random pick stays inside the band and the filters.</p>
+{_tier_nav(tier['id'], 1)}
+<section class="builder" aria-label="Tier parlays">
+  <div class="board">
+    <div class="filters" aria-label="Parlay filters">
+      <div class="filter-row">
+        <label>Sport <select data-tier-sport><option value="">All</option><option value="ufc">UFC</option><option value="nfl">NFL</option></select></label>
+        <label>Card <select data-tier-event><option value="">All cards</option></select></label>
+        <label>Legs <input data-min-legs type="number" min="2" max="10" value="2">–<input data-max-legs type="number" min="2" max="10" value="10"></label>
+        <label>Min leg chance <input data-min-p type="range" min="0" max="40" value="0"><output data-min-p-out>0%</output></label>
+        <label>Min edge <input data-min-edge type="range" min="0" max="20" value="0"><output data-min-edge-out>0 pts</output></label>
+      </div>
+      <div class="chips" role="group" aria-label="Style">
+        <button type="button" data-style="any" aria-pressed="true">Any price</button>
+        <button type="button" data-style="fav" aria-pressed="false">Favorites</button>
+        <button type="button" data-style="dog" aria-pressed="false">Underdogs</button>
+        <button type="button" data-style="mixed" aria-pressed="false">Mixed</button>
+      </div>
+      <div class="chips" data-type-chips role="group" aria-label="Leg types"></div>
+      <div class="filter-row">
+        <label>Include <input data-tier-include type="search" placeholder="Names, comma separated"></label>
+        <label>Exclude <input data-tier-exclude type="search" placeholder="Leave these out"></label>
+        <button type="button" class="switch" role="switch" aria-checked="false" data-market-only><span class="switch-ui" aria-hidden="true"></span>Market price only</button>
+        <button type="button" class="switch" role="switch" aria-checked="false" data-same><span class="switch-ui" aria-hidden="true"></span>Allow same fight or game</button>
+        <label>Sort
+          <select data-sort>
+            <option value="chance">Highest chance</option>
+            <option value="payout">Highest payout</option>
+            <option value="edge">Best edge</option>
+            <option value="legs">Fewest legs</option>
+          </select>
+        </label>
+      </div>
+      <div class="filter-row">
+        <label>Preset name <input data-preset-name type="text" placeholder="Saturday dogs"></label>
+        <button type="button" data-preset-save>Save filter preset</button>
+        <label>Saved presets
+          <select data-preset-load><option value="">Choose a preset</option></select>
+        </label>
+      </div>
+    </div>
+    <div class="random-box">
+      <button type="button" class="random-go" data-tier-random>Random pick</button>
+      <p class="fine">A fresh ticket inside this payout band, from the cards these filters allow. Sampling leans toward higher model probability and a positive edge.</p>
+      <div data-tier-random-card></div>
+      <div class="history-row" data-tier-history aria-label="Last five random picks"></div>
+    </div>
+    <p class="fine" data-tier-count></p>
+    <div id="tier-sections">{''.join(blocks) or '<p>No cards are loaded.</p>'}</div>
+  </div>
+  <aside class="slip" id="slip" aria-label="Bet slip">
+    <button type="button" class="slip-peek" data-peek aria-expanded="false" aria-controls="slip-body">
+      <span data-peek-count>Slip · empty</span>
+      <span data-peek-pay>Open a ticket</span>
+    </button>
+    <div id="slip-body" class="slip-body">
+      <header class="slip-head">
+        <h2>Slip</h2>
+        <button type="button" class="textish" data-clear>Clear</button>
+      </header>
+      <div class="slip-stake">
+        <label>Stake
+          <span class="stake-wrap"><span aria-hidden="true">$</span><input data-stake type="number" min="0" step="1" value="1" inputmode="decimal"></span>
+        </label>
+        <div class="chips" role="group" aria-label="Quick stake">
+          <button type="button" data-chip="1" aria-pressed="true">$1</button>
+          <button type="button" data-chip="5" aria-pressed="false">$5</button>
+          <button type="button" data-chip="10" aria-pressed="false">$10</button>
+        </div>
+      </div>
+      <ul class="slip-legs" data-slip-legs></ul>
+      <dl class="slip-nums" data-slip-nums></dl>
+      <p class="fine" data-slip-note>Open a ranked ticket or a random pick. Saving keeps it on this device under My slips.</p>
+      <button type="button" class="share save" data-save>Save to My slips</button>
+      <p class="copied" data-copied hidden>Saved to My slips.</p>
+      <p class="sr-only" aria-live="polite" data-live></p>
+    </div>
+  </aside>
+</section>
+<script type="application/json" id="tier-data">{raw}</script>
+"""
+    return shell(tier["label"], 1, body, built_at, None, ["assets/tiers.js"])
+
+
+def render_stats_page(stats: dict | None, built_at) -> str:
+    if not stats:
+        body = "<h1>Parlay stats</h1><p class='miss'>unavailable</p><p>The backtest did not run.</p>"
+        return shell("Parlay stats", 0, body, built_at, None)
+    tier_rows = []
+    for tier in (
+        ("5000", "+5000 (50 to 1)"), ("10000", "+10000"), ("25000", "+25000"),
+        ("50000", "+50000"), ("100000", "+100000"), ("500000", "+500000"),
+    ):
+        row = (stats.get("tiers") or {}).get(tier[0]) or {}
+        tier_rows.append(
+            "<tr>"
+            f"<td><a href='tiers/{tier[0]}.html'>{esc(tier[1])}</a></td>"
+            f"<td>{_pct_or_thin(row.get('hit_rate'), row.get('n'), 30)}</td>"
+            f"<td>{_backtest_cell(row, 'avg_payout_on_hit', f'{row.get("avg_payout_on_hit") or 0:.2f}')}</td>"
+            f"<td>{_backtest_cell(row, 'roi', f'{(row.get("roi") or 0) * 100:.1f}%')}</td>"
+            f"<td>{_backtest_cell(row, 'longest_drought', str(row.get('longest_drought')))}</td>"
+            f"<td>{row.get('n') or 0}</td>"
+            "</tr>"
+        )
+    bars = []
+    for bucket in stats.get("calibration") or []:
+        width = 0 if bucket.get("hit_rate") is None else min(100, bucket["hit_rate"] * 100)
+        bars.append(
+            f"<div class='cal-row'><span>{esc(bucket.get('label'))}</span>"
+            f"<div class='cal-track'><span style='width:{width:.1f}%'></span></div>"
+            f"<span>{_pct_or_thin(bucket.get('hit_rate'), bucket.get('n'), 30)}"
+            f" · predicted {'—' if bucket.get('avg_predicted') is None else f'{bucket["avg_predicted"] * 100:.1f}%'}</span></div>"
+        )
+    type_rows = []
+    for key, row in (stats.get("leg_types") or {}).items():
+        type_rows.append(
+            f"<tr><td>{esc(key)}</td><td>{_pct_or_thin(row.get('hit_rate'), row.get('n'), 30)}</td>"
+            f"<td>{'—' if row.get('avg_predicted') is None else f'{row["avg_predicted"] * 100:.1f}%'}</td><td>{row.get('n')}</td></tr>"
+        )
+    def _person_rows(rows: list[dict], empty: str) -> str:
+        body = "".join(
+            f"<tr><td>{esc(row['name'])}</td><td>{esc(row['type'])}</td><td>{row['hit_rate'] * 100:.1f}%</td>"
+            f"<td>{row['avg_predicted'] * 100:.1f}%</td><td>{row['n']}</td></tr>"
+            for row in rows
+        )
+        return body or f"<tr><td colspan='5'>{empty}</td></tr>"
+
+    fighter_rows = _person_rows(stats.get("fighters") or [], "Every fighter sample is under 8 settled ticket legs. No rate is shown.")
+    player_rows = _person_rows(stats.get("players") or [], "Every player sample is under 8 settled ticket legs. No rate is shown.")
+    team_rows = "".join(
+        f"<tr><td>{esc(row['team'])}</td><td>{esc(row['type'])}</td><td>{row['hit_rate'] * 100:.1f}%</td>"
+        f"<td>{row['avg_predicted'] * 100:.1f}%</td><td>{row['n']}</td></tr>"
+        for row in stats.get("teams") or []
+    ) or "<tr><td colspan='5'>Every team sample is under 12 settled legs. No rate is shown.</td></tr>"
+    body = f"""
+<p class="kicker">Backtest</p>
+<h1 id="builder-title">Parlay stats</h1>
+<p class="lede">Walk-forward backtest. UFC uses Elo and fight history from before the event. NFL uses stats from before the week and the schedule moneyline. Nothing here is a live betting record.</p>
+<p class="fine">{esc(stats.get('window') or '')}</p>
+<p class="fine">{esc(stats.get('ufc_price_note') or '')}</p>
+<p class="fine">{esc(stats.get('nfl_price_note') or '')}</p>
+{''.join(f"<p class='miss'>{esc(note)}</p>" for note in stats.get('notes') or [])}
+<p class="fine">Settled tickets: {stats.get('tickets') or 0}. Settled legs inside those tickets: {stats.get('offered_legs') or 0}. Fighter rows hidden as thin: {stats.get('thin_fighters') or 0}. Player rows hidden as thin: {stats.get('thin_players') or 0}. Team rows hidden as thin: {stats.get('thin_teams') or 0}. Tables show the largest samples first. Average payout says "no hits" when the sample is large enough and nothing won.</p>
+<h2>By payout tier</h2>
+<div class="scroll"><table>
+<thead><tr><th>Tier</th><th>Hit rate</th><th>Avg payout when it hit</th><th>ROI at $1</th><th>Longest drought</th><th>n</th></tr></thead>
+<tbody>{''.join(tier_rows)}</tbody>
+</table></div>
+<h2>Calibration</h2>
+<p class="fine">Our predicted chance against how often those tickets actually hit. A bin under 30 tickets is too thin to read.</p>
+{''.join(bars) or '<p>No settled tickets.</p>'}
+<h2>Leg types</h2>
+<div class="scroll"><table>
+<thead><tr><th>Type</th><th>Hit rate</th><th>Avg predicted</th><th>n</th></tr></thead>
+<tbody>{''.join(type_rows) or '<tr><td colspan="4">No settled legs.</td></tr>'}</tbody>
+</table></div>
+<h2>Fighters</h2>
+<p class="fine">UFC legs only. Shown when a fighter has at least 8 settled ticket legs of that type. Smaller samples are counted above and not given a rate.</p>
+<div class="scroll"><table>
+<thead><tr><th>Fighter</th><th>Leg</th><th>Hit rate</th><th>Avg predicted</th><th>n</th></tr></thead>
+<tbody>{fighter_rows}</tbody>
+</table></div>
+<h2>NFL players</h2>
+<p class="fine">Prop legs that sat in a sampled ticket. Shown when a player has at least 8 settled legs of that type.</p>
+<div class="scroll"><table>
+<thead><tr><th>Player</th><th>Leg</th><th>Hit rate</th><th>Avg predicted</th><th>n</th></tr></thead>
+<tbody>{player_rows}</tbody>
+</table></div>
+<h2>Teams</h2>
+<p class="fine">Shown only when a team has at least 12 settled prop legs of that type. Moneylines are not in this table.</p>
+<div class="scroll"><table>
+<thead><tr><th>Team</th><th>Leg</th><th>Hit rate</th><th>Avg predicted</th><th>n</th></tr></thead>
+<tbody>{team_rows}</tbody>
+</table></div>
+"""
+    return shell("Parlay stats", 0, body, built_at, None)
+
+
+def render_slips_page(built_at) -> str:
+    body = """
+<p class="kicker">This browser only</p>
+<h1 id="builder-title">My slips</h1>
+<p class="lede">Saved on this device. Marking a slip won or lost updates a $1-stake running P&amp;L. Nothing is sent to a server.</p>
+<p class="pnl" id="slip-pnl">$0.00</p>
+<p class="fine" id="slip-meta">No settled slips yet.</p>
+<div class="board-tools">
+  <button type="button" id="slip-export">Export CSV</button>
+</div>
+<div class="scroll"><table class="slip-table">
+<thead><tr><th>Saved</th><th>Card</th><th>Odds</th><th>Legs</th><th>Result</th></tr></thead>
+<tbody id="slip-rows"><tr><td colspan="5">No saved slips.</td></tr></tbody>
+</table></div>
+"""
+    return shell("My slips", 0, body, built_at, None, ["assets/slips.js"])
