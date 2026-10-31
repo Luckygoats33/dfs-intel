@@ -758,21 +758,22 @@
       typeBox.appendChild(pressChip(TYPE_LABELS[type] || type, true, function (on) {
         filters.types[type] = on;
         schedule();
-      }));
+      }, "data-filter-type", type));
     });
     const eventBox = root.querySelector("[data-event-chips]");
     slate.groups.forEach(function (group) {
       eventBox.appendChild(pressChip(group.label, true, function (on) {
         filters.events[group.id] = on;
         schedule();
-      }));
+      }, "data-filter-event", group.id));
     });
   }
-  function pressChip(label, start, onChange) {
+  function pressChip(label, start, onChange, attr, value) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = label;
     button.setAttribute("aria-pressed", start ? "true" : "false");
+    if (attr) button.setAttribute(attr, value);
     button.addEventListener("click", function () {
       const on = button.getAttribute("aria-pressed") !== "true";
       button.setAttribute("aria-pressed", on ? "true" : "false");
@@ -793,8 +794,8 @@
   function syncFilters() {
     filters.minPay = Math.max(1, readNumber("[data-min-pay]", 50));
     filters.maxPay = readNumber("[data-max-pay]", null);
-    filters.minLegs = Math.min(8, Math.max(2, readNumber("[data-min-legs]", 2)));
-    filters.maxLegs = Math.min(8, Math.max(filters.minLegs, readNumber("[data-max-legs]", 5)));
+    filters.minLegs = Math.min(10, Math.max(2, readNumber("[data-min-legs]", 2)));
+    filters.maxLegs = Math.min(10, Math.max(filters.minLegs, readNumber("[data-max-legs]", 5)));
     filters.minP = Number(root.querySelector("[data-min-p]").value) / 100;
     filters.minEdge = Number(root.querySelector("[data-min-edge]").value) / 100;
     root.querySelector("[data-min-p-out]").textContent = root.querySelector("[data-min-p]").value + "%";
@@ -802,6 +803,12 @@
     filters.include = root.querySelector("[data-include]").value;
     filters.exclude = root.querySelector("[data-exclude]").value;
     filters.sort = root.querySelector("[data-sort]").value;
+    const tierSel = root.querySelector("[data-pay-tier]");
+    if (tierSel && document.activeElement !== tierSel) {
+      const max = filters.maxPay == null ? "" : String(filters.maxPay);
+      const key = String(filters.minPay) + "," + max;
+      tierSel.value = Array.from(tierSel.options).some(function (option) { return option.value === key; }) ? key : "";
+    }
   }
 
   root.querySelectorAll("[data-style]").forEach(function (button) {
@@ -826,6 +833,94 @@
     filters.same = event.currentTarget.getAttribute("aria-checked") !== "true";
     event.currentTarget.setAttribute("aria-checked", filters.same ? "true" : "false");
     schedule();
+  });
+  const tierSel = root.querySelector("[data-pay-tier]");
+  if (tierSel) tierSel.addEventListener("change", function () {
+    if (!tierSel.value) return;
+    const parts = tierSel.value.split(",");
+    root.querySelector("[data-min-pay]").value = parts[0];
+    root.querySelector("[data-max-pay]").value = parts[1] || "";
+    syncFilters();
+    schedule();
+  });
+  const PRESET_KEY = "dfs-intel-filter-presets";
+  function readPresets() {
+    try { return JSON.parse(localStorage.getItem(PRESET_KEY) || "[]"); }
+    catch (err) { return []; }
+  }
+  function fillPresetMenu() {
+    const menu = root.querySelector("[data-preset-load]");
+    if (!menu) return;
+    const current = menu.value;
+    menu.innerHTML = '<option value="">Choose a preset</option>';
+    readPresets().forEach(function (preset, index) {
+      if (preset.page !== "builder") return;
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = preset.name;
+      menu.appendChild(option);
+    });
+    menu.value = current;
+  }
+  function snapshotFilters() {
+    return {
+      page: "builder",
+      minPay: filters.minPay, maxPay: filters.maxPay, minLegs: filters.minLegs, maxLegs: filters.maxLegs,
+      minP: filters.minP, minEdge: filters.minEdge, style: filters.style,
+      types: Object.assign({}, filters.types), events: Object.assign({}, filters.events),
+      include: filters.include, exclude: filters.exclude, marketOnly: filters.marketOnly, same: filters.same, sort: filters.sort
+    };
+  }
+  function applyBuilderPreset(preset) {
+    root.querySelector("[data-min-pay]").value = preset.minPay;
+    root.querySelector("[data-max-pay]").value = preset.maxPay == null ? "" : preset.maxPay;
+    root.querySelector("[data-min-legs]").value = preset.minLegs;
+    root.querySelector("[data-max-legs]").value = preset.maxLegs;
+    root.querySelector("[data-min-p]").value = Math.round((preset.minP || 0) * 100);
+    root.querySelector("[data-min-edge]").value = Math.round((preset.minEdge || 0) * 100);
+    root.querySelector("[data-include]").value = preset.include || "";
+    root.querySelector("[data-exclude]").value = preset.exclude || "";
+    root.querySelector("[data-sort]").value = preset.sort || "chance";
+    filters.style = preset.style || "any";
+    root.querySelectorAll("[data-style]").forEach(function (button) {
+      button.setAttribute("aria-pressed", button.getAttribute("data-style") === filters.style ? "true" : "false");
+    });
+    filters.marketOnly = !!preset.marketOnly;
+    filters.same = !!preset.same;
+    root.querySelector("[data-market-only]").setAttribute("aria-checked", filters.marketOnly ? "true" : "false");
+    root.querySelector("[data-same]").setAttribute("aria-checked", filters.same ? "true" : "false");
+    root.querySelectorAll("[data-filter-type]").forEach(function (button) {
+      const type = button.getAttribute("data-filter-type");
+      const on = !preset.types || preset.types[type] !== false;
+      filters.types[type] = on;
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    root.querySelectorAll("[data-filter-event]").forEach(function (button) {
+      const id = button.getAttribute("data-filter-event");
+      const on = !preset.events || preset.events[id] !== false;
+      filters.events[id] = on;
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    syncFilters();
+    schedule();
+    announce("Loaded filter preset " + (preset.name || ""));
+  }
+  const savePreset = root.querySelector("[data-preset-save]");
+  if (savePreset) savePreset.addEventListener("click", function () {
+    syncFilters();
+    const name = (root.querySelector("[data-preset-name]").value || "").trim();
+    if (!name) { announce("Name the filter preset before saving."); return; }
+    const presets = readPresets().filter(function (preset) { return !(preset.page === "builder" && preset.name === name); });
+    presets.unshift(Object.assign({ name: name }, snapshotFilters()));
+    localStorage.setItem(PRESET_KEY, JSON.stringify(presets.slice(0, 30)));
+    fillPresetMenu();
+    announce("Saved filter preset " + name);
+  });
+  const loadPreset = root.querySelector("[data-preset-load]");
+  if (loadPreset) loadPreset.addEventListener("change", function () {
+    const presets = readPresets();
+    const preset = presets[Number(loadPreset.value)];
+    if (preset && preset.page === "builder") applyBuilderPreset(preset);
   });
   document.getElementById("mode-results").addEventListener("click", function () { setMode("results"); });
   document.getElementById("mode-manual").addEventListener("click", function () { setMode("manual"); });
@@ -887,6 +982,27 @@
       if (open) stakeEl.focus();
     });
   }
+  const saveButton = root.querySelector("[data-save]");
+  if (saveButton) saveButton.addEventListener("click", function () {
+    if (!selected.length) { announce("Open or build a parlay before saving."); return; }
+    const result = quote(groupSelected());
+    if (result.status !== "ok" || result.decimal == null) { announce("This slip has no settled chance, so it was not saved."); return; }
+    const key = "dfs-intel-slips-v1";
+    const slips = JSON.parse(localStorage.getItem(key) || "[]");
+    slips.unshift({
+      id: Date.now().toString(36),
+      savedAt: new Date().toISOString(),
+      title: slate.title,
+      legs: selected.map(function (entry) { return { label: entry.leg.label, price: priceText(entry.leg), why: why(entry.leg) }; }),
+      decimal: result.decimal,
+      p: result.p,
+      result: "open"
+    });
+    localStorage.setItem(key, JSON.stringify(slips.slice(0, 200)));
+    root.querySelector("[data-copied]").hidden = false;
+    root.querySelector("[data-copied]").textContent = "Saved to My slips.";
+    announce("Saved to My slips");
+  });
   if (searchEl) searchEl.addEventListener("input", renderManual);
   if (marketNote) {
     marketNote.textContent = slate.sport === "ufc"
@@ -896,6 +1012,7 @@
   const randomButton = root.querySelector("[data-random]");
   if (randomButton) randomButton.addEventListener("click", shuffleRandom);
   setupFilters();
+  fillPresetMenu();
   syncFilters();
   renderResults();
   renderRandom();

@@ -27,8 +27,25 @@ If the deploy job fails because Pages is not enabled, open the repo on GitHub an
 
 ## What each page shows
 
-- **Home** — upcoming UFC events from the public UFC.com events list, and every regular-season
-  NFL week in the nflverse schedule.
+- **Home** — six payout tiers are the front door. Under them: the next UFC card's parlay builder,
+  then every upcoming UFC event and every regular-season NFL week.
+- **Payout tiers** — `+5000` (50 to 1, $51 back on $1) plus `+10000`, `+25000`, `+50000`,
+  `+100000`, and `+500000`. Each tier is its own page of ranked tickets for every UFC card and
+  every NFL week that is not already final. Legs can be moneyline, method, method and round,
+  distance, round, timing, or an NFL player prop. Random pick draws inside that band and the
+  active filters, weighted toward higher model probability and a positive edge. Shuffle again,
+  lock a leg, and add the card to the slip. The last five picks stay under the button.
+- **Parlay stats** — a walk-forward backtest. UFC win probabilities are `elo-baseline-v0` from
+  fights before the event, priced at the fair model decimal because the mirror has no historical
+  moneylines. NFL moneylines use the nflverse schedule price. NFL props use `trail-quantile-v0`
+  on games before that week. Each tier shows hit rate, average payout when it hit, ROI at $1
+  stakes, and the longest losing streak, plus a calibration chart, leg-type rates, and
+  per-fighter and per-team prop trends. A tier, leg type, or calibration bin under 30 settled
+  results is labeled too thin and the rate is withheld. Fighter rows need 8 settled legs. Team
+  prop rows need 12. These are backtest counts, not a live record.
+- **My slips** — saved in this browser only (`localStorage`). Mark a slip won or lost to update
+  a running profit and loss at $1 stakes. Open slips stay out of that total. Export CSV downloads
+  the list. Nothing is uploaded.
 - **UFC event** — full card (main, prelims, early prelims), UFC.com moneylines, no-vig implied
   probabilities, overround, weigh-in weights and missed-weight lines when a UFC.com article is
   linked from the news index, and scheduled rounds only when UFC.com states them. Elo ratings
@@ -41,14 +58,15 @@ If the deploy job fails because Pages is not enabled, open the repo on GitHub an
   `trailing-average-v0`: the mean of up to the last 8 regular-season games before that week,
   scored with the rules in `dfs_intel/dk_scoring_config.py`. DST and kickers are unavailable
   because this refresh does not download play-by-play.
-- **Parlay builder** — the centerpiece, on the home page (next UFC card), each event, and each
-  NFL week. Desktop keeps the slip pinned; mobile uses a bottom sheet. Stake chips are $1, $5,
-  and $10. Tabs are Moneyline, Method, Round, Timing, and NFL Player Props. Search, a “pays $50+
-  on $1” switch, and a “legs at +5000” filter narrow the board. Presets include the 3/5/7-leg
-  moneyline tickets and a ticket built to +5000 or longer. Copy slip link writes the legs and
-  stake into the URL hash. Random pick draws a fresh ticket at +5000 or longer from the
-  filtered legs, weighted toward higher model probability and a positive edge. Shuffle again,
-  lock a leg, and add the card to the slip. The last five picks stay under the button.
+- **Parlay builder** — on the home page (next UFC card), each event, and each NFL week, beside
+  the tier pages. Desktop keeps the slip pinned; mobile uses a bottom sheet. Stake chips are
+  $1, $5, and $10. Results are ranked tickets. Filters cover payout tier, legs 2–10, leg type,
+  include and exclude names, favorites or underdogs, minimum leg chance, edge floor, market-priced
+  legs only, same-fight or same-game legs, and sort. Those filters can be saved as a preset in
+  this browser. Build your own is the manual board: Moneyline, Method, Round, Timing, and NFL
+  Player Props. Copy slip link writes the legs and stake into the URL hash. Save to My slips
+  keeps the ticket on this device. Random pick draws a fresh ticket at +5000 or longer (or the
+  active payout filter, whichever is higher) from the filtered legs.
 - **UFC props** — method (KO/TKO, submission, decision), method and round, goes the distance,
   fight ends in round N, and the three timing windows. `method-split-v0` multiplies the no-vig
   win probability by that fighter’s method/round mix, shrunk with K=4 toward the weight-class

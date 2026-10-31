@@ -14,7 +14,7 @@ from pathlib import Path
 
 from dfs_intel import ROOT
 from dfs_intel.odds_math import format_american, no_vig, preset_parlays, to_decimal
-from dfs_intel.site_render import render_home, render_nfl, render_ufc
+from dfs_intel.site_render import render_home, render_nfl, render_slips_page, render_stats_page, render_tier_page, render_ufc
 from dfs_intel.ufc_pipeline import norm_name
 from dfs_intel.ufc_public import (
     EVENTS_URL,
@@ -325,7 +325,7 @@ def build_nfl(refresh: bool) -> dict:
     board = load_nfl(refresh=refresh)
     if board.get("status") != "ok":
         return board
-    stats = board.pop("stats_frame", None)
+    stats = board.get("stats_frame")
     for week in board["weeks"]:
         slate = nfl_slate(week, stats)
         week["slate"] = slate
@@ -348,7 +348,113 @@ def _history_blurb(history: dict) -> str:
     )
 
 
-def write_site(out: Path, events: list[dict], board: dict, history: dict, built_at: datetime) -> None:
+def _upcoming_sections(events: list[dict], board: dict) -> dict[str, list[dict]]:
+    from dfs_intel.parlay_pools import parlays_by_tier
+    from dfs_intel.tiers import tiers
+
+    by_tier = {tier["id"]: [] for tier in tiers()}
+
+    def add(slate: dict | None, sport: str, href: str, title: str) -> None:
+        if not slate or not slate.get("groups"):
+            return
+        try:
+            drawn = parlays_by_tier(slate, limit=12)
+        except Exception as exc:
+            drawn = {}
+            title = f"{title} (generator unavailable: {exc})"
+        for tier in tiers():
+            by_tier[tier["id"]].append({
+                "id": str(slate.get("id") or title),
+                "sport": sport,
+                "title": title,
+                "href": href,
+                "parlays": drawn.get(tier["id"]) or [],
+            })
+
+    for event in events:
+        if event.get("status") != "ok" or not event.get("slug"):
+            continue
+        name = event.get("name") or event.get("headline") or event["slug"]
+        add(event.get("slate"), "ufc", f"../ufc/{event['slug']}.html", name)
+    if board.get("status") == "ok":
+        for week in board.get("weeks") or []:
+            if week.get("state") == "final":
+                continue
+            title = f"NFL {week['season']} week {week['week']}"
+            add(week.get("slate"), "nfl", f"../nfl/{week['slug']}.html", title)
+    return by_tier
+
+
+def _nfl_backtest_weeks(board: dict) -> tuple[list[dict], list[str]]:
+    from dfs_intel.nfl_board import _games
+    from dfs_intel.nfl_pipeline import fetch
+
+    weeks = []
+    notes = []
+    try:
+        sched, obs = fetch("schedules", 2025, refresh=False)
+        reg = sched[(sched["season"] == 2025) & (sched["game_type"] == "REG")]
+        observed = obs.isoformat() if hasattr(obs, "isoformat") else str(obs)
+        for week in sorted({int(value) for value in reg["week"].dropna().unique()}):
+            weeks.append({
+                "season": 2025,
+                "week": week,
+                "games": _games(reg, 2025, week),
+                "stats_observed_at": observed,
+            })
+    except Exception as exc:
+        notes.append(f"2025 NFL schedule backtest unavailable: {exc}")
+    if board.get("status") == "ok":
+        for week in board.get("weeks") or []:
+            finals = [game for game in week.get("games") or [] if game.get("score_status") == "final"]
+            if len(finals) < 4:
+                continue
+            slim = dict(week)
+            slim["games"] = finals
+            weeks.append(slim)
+    return weeks, notes
+
+
+def _backtest_report(history: dict, board: dict, stats_frame) -> dict:
+    from dfs_intel.backtest import run_nfl, run_ufc, summarize
+
+    tickets, offered, notes = [], [], []
+    fights = history.get("fights") if history and history.get("status") == "ok" else None
+    if fights is None:
+        notes.append("UFC backtest unavailable: the fight mirror did not load. No UFC hit rate is filled in.")
+    else:
+        try:
+            got, legs = run_ufc(fights, since="2025-01-01", limit_per_tier=4, max_events=36)
+            tickets.extend(got)
+            offered.extend(legs)
+        except Exception as exc:
+            notes.append(f"UFC backtest unavailable: {exc}")
+    weeks, week_notes = _nfl_backtest_weeks(board)
+    notes.extend(week_notes)
+    if stats_frame is None:
+        notes.append("NFL backtest unavailable: player stats did not load. No NFL hit rate is filled in.")
+    elif not weeks:
+        notes.append("NFL backtest unavailable: no completed weeks were loaded.")
+    else:
+        try:
+            got, legs = run_nfl(stats_frame, weeks, limit_per_tier=4)
+            tickets.extend(got)
+            offered.extend(legs)
+        except Exception as exc:
+            notes.append(f"NFL backtest unavailable: {exc}")
+    report = summarize(tickets, offered)
+    report["notes"] = notes
+    report["window"] = (
+        "UFC: events on or after 2025-01-01, at most the latest 36 cards with 4 or more fights and 40 prior mirror fights. "
+        "NFL: 2025 regular season, plus 2026 weeks that already have at least 4 final scores. "
+        "Each tier keeps up to 4 sampled tickets per card or week. "
+        "A tier, leg type, or calibration bin under 30 settled results is too thin to quote. "
+        "Fighter rows need 8 settled legs. Team prop rows need 12."
+    )
+    return report
+
+
+def write_site(out: Path, events: list[dict], board: dict, history: dict, built_at: datetime, stats: dict | None) -> None:
     if out.exists():
         shutil.rmtree(out)
     (out / "assets").mkdir(parents=True)
@@ -356,6 +462,9 @@ def write_site(out: Path, events: list[dict], board: dict, history: dict, built_
     (out / "nfl").mkdir()
     shutil.copy(STATIC / "site.css", out / "assets" / "site.css")
     shutil.copy(STATIC / "parlay.js", out / "assets" / "parlay.js")
+    shutil.copy(STATIC / "tiers.js", out / "assets" / "tiers.js")
+    shutil.copy(STATIC / "slips.js", out / "assets" / "slips.js")
+    (out / "tiers").mkdir()
     slates = []
     for event in events:
         slate = event.get("slate")
@@ -376,6 +485,13 @@ def write_site(out: Path, events: list[dict], board: dict, history: dict, built_
         for week in board["weeks"]:
             html = render_nfl(week, built_at, board)
             (out / "nfl" / f"{week['slug']}.html").write_text(html, encoding="utf-8")
+    from dfs_intel.tiers import tiers
+    sections = _upcoming_sections(events, board)
+    for tier in tiers():
+        html = render_tier_page(tier, sections.get(tier["id"]) or [], built_at)
+        (out / "tiers" / f"{tier['id']}.html").write_text(html, encoding="utf-8")
+    (out / "stats.html").write_text(render_stats_page(stats, built_at), encoding="utf-8")
+    (out / "slips.html").write_text(render_slips_page(built_at), encoding="utf-8")
     summary = {
         "built_at": built_at.isoformat(),
         "ufc_events": [
@@ -415,8 +531,13 @@ def build(out: Path, delay: float = 2.5, refresh_nfl: bool = True, refresh_histo
         board = build_nfl(refresh=refresh_nfl)
     except Exception as exc:
         board = {"status": "unavailable", "error": str(exc), "weeks": []}
+    stats_frame = board.pop("stats_frame", None) if isinstance(board, dict) else None
+    try:
+        report = _backtest_report(history, board, stats_frame)
+    except Exception as exc:
+        report = {"notes": [f"Backtest unavailable: {exc}"], "tiers": {}, "calibration": [], "leg_types": {}, "fighters": [], "teams": []}
     built_at = _now()
-    write_site(out, events, board, history, built_at)
+    write_site(out, events, board, history, built_at, report)
     fights = sum(len(e.get("fights") or []) for e in events if e.get("status") == "ok")
     weeks = [w["week"] for w in board.get("weeks") or []]
     return {
